@@ -1,21 +1,37 @@
-# Chapter 02A executables
+# Common build artifacts
+*.o
+*.a
+*.so
+*.ko
+*.elf
+*.out
+core
+core.*
+
+# Chapter 02A - executables
 /02a/eintr_read
 /02a/file_io
 /02a/file_io_ebadf
 /02a/file_io_missing
 /02a/partial_write
 
-# Chapter 02B executables
+# Chapter 02B - executables
 /02b/cow_fault_lab
 /02b/cow_lab
 /02b/execve_lab
 /02b/fork_exec_lab
 /02b/fork_lab
 /02b/mmap_lab
+/02b/mmap_file_lab
+/02b/mmap_share_lab
 
-# Build artifacts
-*.o
-*.a
-*.so
-core
-core.*
+# Chapter 02B - generated data
+/02b/mmap_sample.txt
+
+# Chapter 02C - executables
+/02c/abi_arm64
+/02c/abi_lab
+/02c/mutex_lab
+/02c/mutex_trace_lab
+/02c/pthread_basic
+/02c/race_lab
