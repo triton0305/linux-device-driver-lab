@@ -1,0 +1,104 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/printk.h>
+#include <linux/slab.h>
+#include <linux/errno.h>
+#include <linux/string.h>
+
+#define BUFFER_SIZE 64
+#define LABEL_SIZE 16
+
+struct chain_state {
+  unsigned int count;
+};
+
+static struct chain_state *state;
+static unsigned char *buffer;
+static char *label;
+static int fail_step;
+
+module_param(fail_step, int, 0444);
+MODULE_PARM_DESC(fail_step, "Inject init failure at step 1, 2, or 3");
+
+static int __init chain_lab_init(void)
+{
+  int ret = -ENOMEM;
+
+  state = kzalloc(sizeof(*state), GFP_KERNEL);
+  if (!state)
+    return -ENOMEM;
+
+  pr_info("chain_lab: allocated state\n");
+
+  if (fail_step == 1) {
+    ret = -EIO;
+    goto err_state;
+  }
+
+  buffer = kmalloc(BUFFER_SIZE, GFP_KERNEL);
+  if (!buffer)
+    goto err_state;
+
+  memset(buffer, 0, BUFFER_SIZE);
+  pr_info("chain_lab: allocated buffer\n");
+
+  if (fail_step == 2) {
+    ret = -EIO;
+    goto err_buffer;
+  }
+
+  label = kzalloc(LABEL_SIZE, GFP_KERNEL);
+  if (!label)
+    goto err_buffer;
+
+  strscpy(label, "READY", LABEL_SIZE);
+  pr_info("chain_lab: allocated label\n");
+
+  if (fail_step == 3) {
+    ret = -EIO;
+    goto err_label;
+  }
+
+  state->count = 1;
+  pr_info("chain_lab: initialized count=%u label=%s\n",
+          state->count, label);
+  return 0;
+
+err_label:
+  pr_info("chain_lab: cleanup label\n");
+  kfree(label);
+  label = NULL;
+
+err_buffer:
+  pr_info("chain_lab: cleanup buffer\n");
+  kfree(buffer);
+  buffer = NULL;
+
+err_state:
+  pr_info("chain_lab: cleanup state\n");
+  kfree(state);
+  state = NULL;
+  return ret;
+}
+
+static void __exit chain_lab_exit(void)
+{
+  pr_info("chain_lab: cleanup label\n");
+  kfree(label);
+  label = NULL;
+
+  pr_info("chain_lab: cleanup buffer\n");
+  kfree(buffer);
+  buffer = NULL;
+
+  pr_info("chain_lab: cleanup state\n");
+  kfree(state);
+  state = NULL;
+}
+
+module_init(chain_lab_init);
+module_exit(chain_lab_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("Multi-resource lifetime and failure recovery lab");
