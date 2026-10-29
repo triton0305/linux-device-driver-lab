@@ -40,9 +40,6 @@ core.*
 /ch06-character-pre06d-20261029/
 /ch06-character/ch06c-kit/backups/
 
-# Chapter 07: work in progress (Codex)
-# Remove this rule when Chapter 07 is ready to commit.
-/ch07-platform-gpio/
 
 # Kernel build artifacts
 *.o
