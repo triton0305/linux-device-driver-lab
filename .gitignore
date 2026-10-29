@@ -35,3 +35,24 @@ core.*
 /02c/mutex_trace_lab
 /02c/pthread_basic
 /02c/race_lab
+
+# Chapter 06: local backups
+/ch06-character-pre06d-20261029/
+/ch06-character/ch06c-kit/backups/
+
+# Chapter 07: work in progress (Codex)
+# Remove this rule when Chapter 07 is ready to commit.
+/ch07-platform-gpio/
+
+# Kernel build artifacts
+*.o
+*.ko
+*.cmd
+*.mod
+*.mod.c
+Module.symvers
+modules.order
+
+# Python temporary files
+__pycache__/
+*.pyc
