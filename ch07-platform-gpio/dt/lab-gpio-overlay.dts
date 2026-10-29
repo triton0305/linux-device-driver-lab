@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/dts-v1/;
+/plugin/;
+#include <dt-bindings/gpio/gpio.h>
+/* OFFLINE TEMPLATE ONLY. 5/4 correspond to existing D0 wiring; polarity pending verification. */
+/ {
+	compatible = "brcm,bcm2711";
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			lab_gpio: lab-gpio {
+				compatible = "yocto-lab,gpio-demo";
+				led-gpios = <&gpio 5 GPIO_ACTIVE_HIGH>;
+				button-gpios = <&gpio 4 GPIO_ACTIVE_LOW>;
+				/* External bias required. Enable only after target audit. */
+				status = "disabled";
+			};
+		};
+	};
+};

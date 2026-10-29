@@ -1,0 +1,65 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/dts-v1/;
+/plugin/;
+#include <dt-bindings/gpio/gpio.h>
+/* Eight-channel replacement for the single D0 overlay, never an addition to it.
+ * Offline template: all nodes disabled. Preserve the deployed D0 overlay.
+ * Active-high LED / active-low button follow the D0 template; verify the actual
+ * circuit bias, polarity and all GPIO consumers before any target installation.
+ */
+/ {
+	compatible = "brcm,bcm2711";
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			lab_gpio_d0: lab-gpio {
+				compatible = "yocto-lab,gpio-demo";
+				led-gpios = <&gpio 5 GPIO_ACTIVE_HIGH>;
+				button-gpios = <&gpio 4 GPIO_ACTIVE_LOW>;
+				status = "disabled";
+			};
+			lab_gpio_d1: lab-gpio-d1 {
+				compatible = "yocto-lab,gpio-demo";
+				led-gpios = <&gpio 6 GPIO_ACTIVE_HIGH>;
+				button-gpios = <&gpio 17 GPIO_ACTIVE_LOW>;
+				status = "disabled";
+			};
+			lab_gpio_d2: lab-gpio-d2 {
+				compatible = "yocto-lab,gpio-demo";
+				led-gpios = <&gpio 12 GPIO_ACTIVE_HIGH>;
+				button-gpios = <&gpio 18 GPIO_ACTIVE_LOW>;
+				status = "disabled";
+			};
+			lab_gpio_d3: lab-gpio-d3 {
+				compatible = "yocto-lab,gpio-demo";
+				led-gpios = <&gpio 13 GPIO_ACTIVE_HIGH>;
+				button-gpios = <&gpio 27 GPIO_ACTIVE_LOW>;
+				status = "disabled";
+			};
+			lab_gpio_d4: lab-gpio-d4 {
+				compatible = "yocto-lab,gpio-demo";
+				led-gpios = <&gpio 19 GPIO_ACTIVE_HIGH>;
+				button-gpios = <&gpio 22 GPIO_ACTIVE_LOW>;
+				status = "disabled";
+			};
+			lab_gpio_d5: lab-gpio-d5 {
+				compatible = "yocto-lab,gpio-demo";
+				led-gpios = <&gpio 16 GPIO_ACTIVE_HIGH>;
+				button-gpios = <&gpio 23 GPIO_ACTIVE_LOW>;
+				status = "disabled";
+			};
+			lab_gpio_d6: lab-gpio-d6 {
+				compatible = "yocto-lab,gpio-demo";
+				led-gpios = <&gpio 26 GPIO_ACTIVE_HIGH>;
+				button-gpios = <&gpio 24 GPIO_ACTIVE_LOW>;
+				status = "disabled";
+			};
+			lab_gpio_d7: lab-gpio-d7 {
+				compatible = "yocto-lab,gpio-demo";
+				led-gpios = <&gpio 20 GPIO_ACTIVE_HIGH>;
+				button-gpios = <&gpio 25 GPIO_ACTIVE_LOW>;
+				status = "disabled";
+			};
+		};
+	};
+};

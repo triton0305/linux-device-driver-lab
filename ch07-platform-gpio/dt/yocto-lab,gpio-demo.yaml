@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/misc/yocto-lab,gpio-demo.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: Yocto lab educational LED and sampled button
+
+maintainers:
+  - Yocto Lab <yocto-lab@example.com>
+
+description: |
+  Private teaching binding, not an upstream vendor registration. One logical
+  LED output and one sampled button input. GPIO polarity is specified by GPIO
+  flags. The circuit must provide a defined button bias and safe LED state
+  before probe and after descriptor release. No interrupts or debounce events.
+
+properties:
+  compatible:
+    const: yocto-lab,gpio-demo
+  led-gpios:
+    maxItems: 1
+    description: LED output; logical zero is off.
+  button-gpios:
+    maxItems: 1
+    description: Button input; logical one is pressed.
+
+required:
+  - compatible
+  - led-gpios
+  - button-gpios
+
+additionalProperties: false
+
+examples:
+  - |
+    #include <dt-bindings/gpio/gpio.h>
+    lab-gpio {
+        compatible = "yocto-lab,gpio-demo";
+        led-gpios = <&gpio 17 GPIO_ACTIVE_HIGH>;
+        button-gpios = <&gpio 27 GPIO_ACTIVE_LOW>;
+        status = "disabled";
+    };
+...
