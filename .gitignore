@@ -40,10 +40,7 @@ core.*
 /ch06-character-pre06d-20261029/
 /ch06-character/ch06c-kit/backups/
 
-
 # Kernel build artifacts
-*.o
-*.ko
 *.cmd
 *.mod
 *.mod.c
@@ -53,3 +50,7 @@ modules.order
 # Python temporary files
 __pycache__/
 *.pyc
+
+# Chapter 07 - Platform GPIO generated artifacts
+/ch07-platform-gpio/build/
+/ch07-platform-gpio/driver/.tmp_versions/
