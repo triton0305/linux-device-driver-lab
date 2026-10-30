@@ -1,17 +1,29 @@
-# 06C test plan — pending real Raspberry Pi verification
+# Chapter 06C — ioctl 검사 항목
 
-Target: Pi 4B, Yocto, `6.18.33-v8` (must check actual `uname -r` before loading).
+대상: Raspberry Pi 4B / Yocto ARM64 / Linux 6.18.33-v8.
 
-Expected native `thermal_ioctl_test` checks:
-- ABI structure is 16 bytes
-- RESET returns 0, GET returns version 1/state 0; legacy read confirms 0
-- SET 1 returns 0; GET and legacy read confirm 1
-- Invalid state 2, bad ABI version 2, nonzero reserved field -> -1/EINVAL; state unchanged
-- Unknown ioctl and wrong encoded size -> -1/ENOTTY
-- SET/GET protected page -> -1/EFAULT; state unchanged
-- Legacy `write("0", 1)` -> 1, GET confirms state 0
-- Final SET 0, GET 0
-- `SUMMARY: all PASS, 0 FAIL` and exit code 0
-- Rerun `thermal_test`: 19/19 PASS, exit 0 (regression check)
+## 실행
 
-Strict gates: build PASS, transfer PASS, insmod PASS, new function PASS, old regression PASS are **distinct**. Capture Pi logs before marking done.
+```sh
+/tmp/thermal_ioctl_test
+echo $?
+/tmp/thermal_test
+echo $?
+```
+
+## 확인 항목
+
+| 항목 | 기대 동작 |
+|---|---|
+| 구조체 크기 | 상태 ABI 16바이트 |
+| RESET·GET | RESET 후 version=1, state=0, 기존 read도 0 |
+| SET·GET | SET 1 후 ioctl과 기존 read 모두 1 |
+| state=2, version=2, reserved 값 설정 | `EINVAL`, 기존 상태 유지 |
+| 알 수 없는 명령·잘못된 크기 | `ENOTTY` |
+| 보호된 사용자 페이지의 SET·GET | `EFAULT` |
+| 기존 `write("0", 1)` | 반환값 1, GET 상태 0 |
+| 종료 전 상태 | SET 0, GET 0 |
+| 결과 출력 | `SUMMARY: all PASS, 0 FAIL`, 종료 코드 0 |
+| read/write 회귀 | `thermal_test`의 19개 검사 및 종료 코드 확인 |
+
+결과 기록에는 `uname -r`, 모듈 vermagic, 앱 출력과 종료 코드를 함께 보관한다.

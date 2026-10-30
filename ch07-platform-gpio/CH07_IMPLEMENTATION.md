@@ -1,75 +1,49 @@
-# Chapter 07 implementation
+# Chapter 07 — 구현 및 설계
 
-## 작업 0: 실제 기존 상태 (2026-10-29)
+## 구성
 
-작업 시작 `git status --short`:
+Raspberry Pi 4B / Linux 6.18.33-v8 / Yocto ARM64 환경에서 하나의 Platform Driver로 8개 LED·버튼 채널을 관리한다.
 
-```text
-?? ch06-character-pre06d-20261029/
-?? ch06-character/
-```
+| 구성 요소 | 역할 |
+|---|---|
+| Device Tree Overlay | 채널별 GPIO line offset, 극성, compatible 정의 |
+| `lab_gpio.ko` | 장치별 GPIO 자원 획득과 misc character device 등록 |
+| 공유 UAPI | 16바이트 구조체를 통한 LED 설정과 버튼 상태 조회 |
+| `lab_gpio_test` | 개별 입출력, 8채널 토글, 디바운스, 실행·종료 제어 |
 
-`ch07-platform-gpio/`는 빈 디렉터리였다. 저장소 remote는
-`git@github.com:triton0305/linux-system-programming.git`. 새 저장소, commit, push 없음.
-작업 시작 시 untracked였던 Chapter 06과 백업은 사용자의 작업으로 보존한다.
-작업 중 외부 커밋/ignore 변경이 관측됐으며 최종 상태는 검증 문서 끝에 별도로 기록했다.
+Chapter 06의 miscdevice, read/write, ioctl 입력 검사 패턴을 장치별 상태와 수명 관리로 확장했다.
 
-실제 Chapter 06 구조:
+## Device Tree와 8채널 매핑
 
-- `driver/thermal_core.c`, `driver/Makefile`
-- `include/thermal_uapi.h`
-- `userspace/thermal_test.c`, `thermal_ioctl_test.c`, `thermal_event_test.c`, Yocto 빌드 스크립트
-- `yocto-recipe/`, `ch06c-kit/`, `ch06d-kit/`, `tests/test_plan.md`
-- 작업 중인 meta-yocto-lab에는 별도로 `recipes-kernel/thermal-core/files/` 복사본이 있다.
-  저장소 소스와 layer의 복사본을 자동으로 같다고 가정하면 안 된다.
+`compatible = "yocto-lab,gpio-demo"`를 공유하는 노드마다 `probe()`가 호출된다.
+드라이버는 `devm_gpiod_get(dev, "led", ...)`와 `"button"`으로 descriptor를 얻는다.
 
-| 단계 | 실제 코드·기록 | 판정 |
-|---|---|---|
-| 06B | atomic 가상 상태, ASCII read/write. test_plan의 두 잘못된 write 사례만 observed 표시 | 그 기록 외 전체 통과 근거 없음 |
-| 06C | 16-byte 고정 ABI, RESET/GET/SET, version/reserved 검사, ioctl 앱 | 구현 존재; 이번 작업에서 target 회귀 실행 안 함 |
-| 06D | 8개 이벤트 ring, drop-oldest, 변화 시 sequence/timestamp, waitqueue, poll, shared destructive read; D01–D16 앱 존재 | 소스 구현 존재. 실장비 전체 PASS 로그 없음 → 완료 인증 불가 |
-| 06E | 명시된 요구·전용 구현·검증 기록 없음 | 완료 판정 불가. 06D 코드만으로 완료 추정 금지 |
+아래 숫자는 BCM GPIO controller의 line offset이다.
 
-thermal UAPI는 `'T'` magic, version 1, 16-byte state와 24-byte event.
-`read`는 `'0\n'`/`'1\n'`와 FD별 offset/EOF, `write`는 정확히 한 바이트 `'0'`/`'1'`.
-이벤트는 **thermal 출력 상태 변경**을 나타내며 여러 reader가 하나의 큐를 소모한다.
-버튼 입력의 의미와 다르므로 Chapter 07에서 이 이벤트 구조나 thermal ioctl을 재해석하지 않는다.
+| 채널 | DT 노드 | LED GPIO | 버튼 GPIO | Character Device |
+|---|---|---|---|---|
+| D0 | `lab-gpio` | 5 | 4 | `/dev/lab_gpio-lab-gpio` |
+| D1 | `lab-gpio-d1` | 6 | 17 | `/dev/lab_gpio-lab-gpio-d1` |
+| D2 | `lab-gpio-d2` | 12 | 18 | `/dev/lab_gpio-lab-gpio-d2` |
+| D3 | `lab-gpio-d3` | 13 | 27 | `/dev/lab_gpio-lab-gpio-d3` |
+| D4 | `lab-gpio-d4` | 19 | 22 | `/dev/lab_gpio-lab-gpio-d4` |
+| D5 | `lab-gpio-d5` | 16 | 23 | `/dev/lab_gpio-lab-gpio-d5` |
+| D6 | `lab-gpio-d6` | 26 | 24 | `/dev/lab_gpio-lab-gpio-d6` |
+| D7 | `lab-gpio-d7` | 20 | 25 | `/dev/lab_gpio-lab-gpio-d7` |
 
-재사용한 구현 패턴은 miscdevice, file_operations, nonseekable_open,
-simple_read_from_buffer, 정확한 write 길이/값 검사, version/reserved가 있는 ioctl,
-copy_to/from_user 오류 처리, mutex 직렬화와 C 앱 테스트 방식이다.
-기존 모듈을 링크하거나 수정하지 않고 Chapter 07에서 이 구조를 확장했다.
-가상 단일 global state를 그대로 GPIO에 연결하는 방식은 platform device 제거 수명에 맞지 않는다.
+LED는 active-high, 버튼은 active-low로 정의한다. 입력 bias와 출력 전류 제한은 회로에 구성한다.
+`<&gpio offset flags>`의 flags가 논리값과 전기적 극성의 대응을 결정한다.
 
-## DT와 GPIO controller 근거
+소스 템플릿의 노드는 `disabled`이며, 장비 적용 사본에서 활성화한다. 8채널 Overlay는 단일 채널 Overlay를 교체하는 구성이다.
 
-기존 Yocto `build/tmp/work-shared/raspberrypi4-64/kernel-source`에서 확인:
-
-- `arch/arm64/boot/dts/broadcom/bcm2711-rpi-4-b.dts`는 ARM 쪽 공용 DTS를 include한다.
-- `arch/arm/boot/dts/broadcom/bcm283x.dtsi`의 `gpio: gpio@7e200000`은
-  `gpio-controller`, `#gpio-cells = <2>`를 선언한다.
-- `bcm2711.dtsi`의 `&gpio`가 `compatible = "brcm,bcm2711-gpio"`,
-  `gpio-ranges = <&gpio 0 0 58>`로 확장한다.
-- Pi 4B DTS에 GPIO17/27 line name이 있지만 이는 점유가 없다는 증거가 아니다.
-- 기존 배포 DTB와 파일상 병합 후 두 phandle 모두 `/soc/gpio@7e200000`으로 해결됨을 검사했다.
-  bus 주소를 CPU 물리 주소나 물리 header pin 번호로 혼동하지 않는다.
-
-`yocto-lab,gpio-demo`는 이 저장소 전용 교육 compatible이며 upstream vendor prefix 등록을
-주장하지 않는다. YAML maintainer 이메일도 교육용 placeholder다. upstream 제출 시 실제
-maintainer와 vendor-prefix 검토가 필요하다. `led-gpios`, `button-gpios`는 각 1개 필수.
-`<&gpio line-offset flags>`의 마지막 cell이 극성을 결정한다.
-Driver는 `devm_gpiod_get(dev, "led", ...)` / `"button"`으로만 요청하며 번호를 모른다.
-같은 line을 둘에 지정하면 exclusive GPIO 요청이 충돌하므로 probe 실패가 기대된다.
-
-기본 예시는 active-high LED, active-low 버튼이며 **실회로 확정값이 아니다**.
-외부 button bias를 전제로 내부 pull/pinctrl 강제 설정을 하지 않았다. 입력 부동 상태는
-소프트웨어 polling으로 해결되지 않는다. 다른 회로라면 DT 극성과 bias 설계를 함께 바꿔야 한다.
+BCM2711 GPIO controller는 `/soc/gpio@7e200000`, `#gpio-cells = <2>`를 사용한다. 오프라인 검사 스크립트는 병합된 DT의 phandle, 노드 8개, GPIO 16개의 매핑과 중복을 검사한다.
+`yocto-lab,gpio-demo`와 YAML binding은 프로젝트의 교육용 정의다.
 
 ## Platform driver와 수명
 
 - Linux 6.18.33 로컬 header의 `void (*remove)(struct platform_device *)` 사용.
 - 같은 소스의 `gpiod_set_value_cansleep()`는 **int 반환**이다. SET 실패를 앱으로 전파하며
-  요청 상태 캐시는 성공했을 때만 갱신한다. 오래된 void API 문서만으로 판단하지 않았다.
+  요청 상태 캐시는 성공했을 때만 갱신한다.
 - `of_device_id`, `MODULE_DEVICE_TABLE(of, ...)`, `module_platform_driver` 제공.
 - `platform_set_drvdata`로 per-device 상태 연결. 노드별 `/dev/lab_gpio-<dev_name>` 생성.
   템플릿의 일반적인 이름은 `/dev/lab_gpio-lab-gpio`이며 실제 sysfs/devnode를 기준으로 한다.
@@ -88,19 +62,8 @@ Driver는 `devm_gpiod_get(dev, "led", ...)` / `"button"`으로만 요청하며 �
 - 이후 옛 FD의 read/write/ioctl은 `ENODEV`; descriptor를 만지지 않는다. 마지막 close가 객체 해제.
   재bind는 별도 객체를 만들므로 옛 FD를 새 GPIO로 연결하지 않는다.
 - `.owner = THIS_MODULE`로 정상 module unload는 열린 FD가 있으면 거부된다.
-  platform unbind는 가능하다. 강제 unload는 지원하지 않는다.
+  platform unbind는 가능하다. 모듈 해제는 열린 FD를 닫은 뒤 수행한다.
 - shutdown에서도 dead 표시와 OFF를 시도한다. close 자체는 공유 LED를 OFF하지 않는다.
-
-OFF API가 실패하면 경고를 남긴다. 전원 인가 직후, GPIO 획득 자체 실패, provider 고장,
-전원 손실, descriptor 해제 이후 전압을 이 드라이버만으로 보장할 수 없다.
-GPIO default level과 외부 회로가 비활성 상태를 보장해야 한다.
-
-예상 로그 (실행 관측 로그가 아님):
-
-```text
-lab-gpio lab-gpio: bound; GPIOs acquired; logical LED OFF; /dev/lab_gpio-lab-gpio
-lab-gpio lab-gpio: unbound; old FDs return ENODEV; GPIO cleanup follows
-```
 
 ## 사용자 API 계약
 
@@ -115,20 +78,47 @@ lab-gpio lab-gpio: unbound; old FDs return ENODEV; GPIO cleanup follows
 | unknown command/size | ENOTTY |
 | removed device FD | read/write/ioctl ENODEV; close 가능 |
 
-두 구조는 `__u32` 4개이며 포인터가 없다. CONFIG_COMPAT에서는 compat_ptr_ioctl을 사용하나
-32-bit 사용자 앱 실행은 검증하지 않았다. 여러 open은 LED 상태를 공유하고 I/O는 mutex로
-직렬화된다. 마지막으로 성공한 SET이 최종 출력이며 FD별 독립 출력은 아니다.
-`read` offset만 FD별이다. button GET은 요청마다 현재 logical sample을 읽으며 queue를 소모하지 않는다.
 
-`watch`는 userspace nanosleep 100 ms × 300회(약 30초)이다. IRQ, gpiod_to_irq,
-request_irq, interrupt DT property, kernel timer/workqueue, poll readiness 구현은 없다.
-`poll(2)`로 버튼 변화를 기다리는 ABI가 아니다. debounce도 하지 않으므로 접점 bounce나
-샘플 간 짧은 누름을 놓칠 수 있다. Chapter 08에서 별도 설계할 범위다.
+두 UAPI 구조는 `__u32` 4개로 구성한다. `CONFIG_COMPAT`에서는 `compat_ptr_ioctl`을 연결한다.
+동일 장치의 여러 FD는 LED 상태를 공유하며, `read` offset은 FD별로 유지한다. 장치가 다른 채널은 각자의 상태와 잠금을 사용한다.
 
-## 근거와 한계
+## 사용자 공간 토글 컨트롤러
 
-빌드 API의 최종 근거는 위 로컬 6.18.33 header와 실제 빌드다.
-[Linux GPIO consumer documentation](https://cdn.kernel.org/doc/html/latest/driver-api/gpio/consumer.html)의
-logical polarity 및 sleep 가능한 consumer API 설명을 참고했다. 온라인 latest의 함수 반환형은
-이 로컬 버전과 다를 수 있으므로 그대로 복사하지 않는다.
-하드웨어 검증 전 완료 주장은 하지 않는다. 검증 표와 복구 절차는 별도 문서에 기록한다.
+### 샘플링과 디바운스
+
+- 한 프로세스가 최대 8개 FD를 열고 각 채널을 순서대로 읽는다.
+- 스캔 완료 후 다음 스캔을 20 ms 뒤로 예약한다. 지연이 생기면 현재 시각을 기준으로 다음 간격을 잡는다.
+- 같은 입력을 3회 연속 읽으면 안정 상태로 받아들인다.
+- 안정된 해제 상태에서 재무장하고, 이후 안정된 눌림 상태에서 LED를 한 번 토글한다.
+- 시작할 때 눌린 버튼은 해제 후 다시 눌렀을 때 토글된다.
+- `watch`는 별도 관찰 명령으로, 100 ms 간격 300회 조회하고 10회마다 출력한다.
+
+### 실행 조정과 IPC
+
+장치 경로를 정규화하고 정렬한 뒤 gate lock과 owner lock을 얻는다. 전체 채널의 소유권을 확보한 뒤 GPIO 초기화를 시작한다.
+경로별 Unix Domain Socket은 상태 조회와 종료 요청을 받는다.
+
+| 명령 | 동작 |
+|---|---|
+| `all toggle start` | 8채널 OFF 초기화 후 백그라운드 컨트롤러 시작 |
+| `all toggle status` | 각 채널 컨트롤러 상태 조회 |
+| `all toggle stop` / `all off` | 전체 그룹 종료 및 채널별 OFF 요청 |
+| 그룹 구성원의 `toggle stop` / `off` | 해당 구성원이 속한 그룹 전체 종료 |
+| `on` / `selftest` | owner lock을 얻어 수동 출력과 컨트롤러의 충돌 방지 |
+
+채널 지정은 단일 장치, `all`, 서로 다른 8개 장치의 쉼표 구분 목록을 지원한다.
+lock은 이 앱의 명령 간 실행 조정에 사용하며, 커널 I/O는 드라이버의 mutex로 직렬화한다.
+
+### 오류 및 종료 처리
+
+초기 open·GET·OFF 오류나 실행 중 GET·SET 오류가 발생하면 그룹을 정리한다.
+정리 과정은 각 채널의 OFF와 close를 순서대로 수행하고, 한 채널의 오류가 있어도 나머지 채널을 계속 처리한다.
+정리가 끝난 뒤 owner lock을 놓고 종료 결과를 응답한다.
+
+`SIGINT`·`SIGTERM`은 정리 경로로 연결하고 `SIGHUP`은 무시한다. `SIGKILL` 이후에는 `all off` 또는 재시작 초기화로 출력을 정리한다.
+`on` 명령으로 설정한 LED는 앱 종료 후에도 유지되며, `off`로 끈다.
+
+## 문서 및 검증
+
+실장비 결과와 빌드 기록은 [CH07_VERIFICATION.md](CH07_VERIFICATION.md), 사용 명령과 빌드 절차는 [README.md](README.md)에 정리한다.
+API 구현은 프로젝트의 Linux 6.18.33 header를 기준으로 한다.
