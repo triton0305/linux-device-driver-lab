@@ -1,30 +1,61 @@
-# Chapter 07 — Device Tree / Platform Driver / GPIO
+# Chapter 07 — 8-Channel Platform GPIO Driver
 
-Raspberry Pi 4B / Yocto ARM64 학습용 구현. Chapter 05/06 소스는 보존한다.
-실제 결과는 [CH07_VERIFICATION.md](CH07_VERIFICATION.md), 설계·기존 코드 분석은
-[CH07_IMPLEMENTATION.md](CH07_IMPLEMENTATION.md)에 기록한다.
+**Raspberry Pi 4B에서 Device Tree와 Linux Platform Driver를 연결해 8개 LED·버튼 채널을 독립 제어합니다.**
 
-## 현재 상태와 안전 조건
+하나의 `lab_gpio.ko`가 동일한 `compatible`을 가진 8개 Platform Device에 바인딩하고, 장치별 Character Interface를 제공합니다. 사용자 공간 C 앱은 버튼 입력을 샘플링해 LED를 토글합니다.
 
-- ARM64 외부 모듈·앱 빌드 및 DT 오프라인 병합 완료. **HW VERIFIED 아님**.
-- Overlay의 GPIO17/27은 **후보**이고 노드는 기본 `disabled`다.
-- 실제 GPIO consumer/pinmux, 부팅 체인, 전기적 극성, 학습자 배선 확인 전에는
-  Overlay를 복사·적용하거나 `status`를 활성화하지 않는다. 물리 핀 번호는 지정하지 않았다.
-- IRQ, 커널 이벤트 큐, 자동 LED-버튼 연동은 없다. 앱이 100 ms 간격으로 입력을 읽는다.
-- 전원 인가부터 probe 이전의 상태는 드라이버가 보장할 수 없다. 회로 검토 시 LED 전류 제한,
-  입력의 확정된 외부 bias, 출력 비활성 상태를 확보해야 한다. 3.3 V GPIO에 5 V를 연결하지 않는다.
+**C · Linux 6.18.33-v8 · ARM64 · Device Tree · GPIO Descriptor · Yocto**
 
-## 파일
+## 핵심 구현
 
-| 경로 | 용도 |
+| 구현 | 주요 내용 |
 |---|---|
-| `driver/lab_gpio.c`, `driver/Makefile` | DT platform driver와 misc character interface |
-| `include/lab_gpio_uapi.h` | LED 설정·버튼 샘플을 위한 고정 크기 ABI |
-| `userspace/lab_gpio_test.c` | get/on/off/watch/selftest/hold |
-| `dt/` | 비활성 Overlay 템플릿, 교육용 YAML binding |
-| `scripts/build-existing.sh` | 기존 Yocto sysroot/toolchain/kernel artifacts만 재사용 |
-| `scripts/inspect-target.sh` | 장비에서 수행할 읽기 전용 조사 |
-| `yocto/` | 기존 meta-yocto-lab에 추가할 모듈·앱 recipe 원본 |
+| **다중 장치 지원** | 장치별 GPIO descriptor, 상태, mutex, 참조 카운트 분리 |
+| **장치 수명 관리** | `kref`로 열린 FD의 수명 유지, remove 이후 I/O에 `ENODEV` 반환 |
+| **자원 정리** | `devm_gpiod_get()`과 cleanup action을 이용한 GPIO 반환 및 출력 OFF 요청 |
+| **커널·사용자 공간 인터페이스** | `read/write/ioctl`, 고정 크기 UAPI, ABI 버전·reserved 필드·잘못된 입력 검사 |
+| **8채널 제어 앱** | 20 ms 간격 샘플링 목표, 3회 연속 입력 확인, 해제 후 재무장, 백그라운드 start/stop |
+| **프로세스 간 제어** | `flock` 기반 실행 조정, Unix Domain Socket을 통한 상태·종료 요청 |
+
+## 실장비 검증 결과
+
+2026-10-30 실습 완료 보고 기준입니다.
+
+| 항목 | 확인 결과 |
+|---|---|
+| 8채널 구성 | 하나의 모듈로 8개 Platform Device 바인딩 및 8개 Character Device 독립 제어 |
+| 실물 입출력 | LED·버튼 동작 확인 |
+| 통합 실행 | `all toggle start/stop` 동작 확인 |
+| 재바인딩 | 기존 1채널에서 `unbind/rebind` 20회 확인 |
+
+장시간 안정성과 8채널 각각의 반복 재바인딩은 위 검증 범위에 포함하지 않습니다.
+
+[CH07_VERIFICATION.md](CH07_VERIFICATION.md)는 실장비 검증 전 작성한 빌드·정적 검사 기록입니다. 해당 문서의 BLOCKED 표기는 당시 상태이며, 위 표는 이후 전달된 실장비 완료 결과입니다.
+
+## 설계 포인트
+
+- **장치 제거 후 열린 FD 처리:** 장치 상태 메모리를 GPIO 자원과 별도로 유지하고, `dead` 상태와 mutex로 제거 이후 접근을 차단합니다.
+- **독립 채널 구성:** 각 DT 노드가 별도 상태를 가지므로 드라이버 복제 없이 채널을 확장합니다.
+- **입력과 출력 책임 구분:** 드라이버는 GPIO 접근과 UAPI를 제공하고, 앱은 디바운스와 버튼·LED 연동을 담당합니다.
+- **현재 처리 방식:** 버튼은 사용자 공간에서 주기적으로 읽습니다. IRQ와 커널 이벤트 큐는 후속 학습 범위입니다.
+
+## 소스 안내
+
+| 경로 | 역할 |
+|---|---|
+| [driver/lab_gpio.c](driver/lab_gpio.c) | Platform Driver, GPIO 획득, misc device, 수명 관리 |
+| [include/lab_gpio_uapi.h](include/lab_gpio_uapi.h) | LED 설정·버튼 상태 조회용 공유 ABI |
+| [userspace/lab_gpio_test.c](userspace/lab_gpio_test.c) | 개별 제어, selftest, 8채널 토글 앱 |
+| [dt/lab-gpio-eight-overlay.dts](dt/lab-gpio-eight-overlay.dts) | 8채널 GPIO 정의 |
+| [tests/](tests/) | 오프라인 검사와 mock 기반 앱 검증 |
+| [scripts/](scripts/) | 기존 Yocto 환경을 이용한 빌드와 장비 조사 |
+| [yocto/](yocto/) | 모듈·앱 BitBake recipe |
+| [CH07_IMPLEMENTATION.md](CH07_IMPLEMENTATION.md) | 초기 설계 및 기존 코드 분석 |
+
+<details>
+<summary><strong>빌드 및 장비 적용 절차</strong></summary>
+
+아래 절차는 초기 단일 채널 템플릿 기준입니다. 저장소의 Overlay는 기본 `disabled`이며, 실장비에 적용한 활성화 구성과 구분합니다. 8채널 빌드는 [build-eight-existing.sh](scripts/build-eight-existing.sh)를 참조합니다.
 
 ## 빌드 (WSL)
 
@@ -88,7 +119,7 @@ bitbake lab-gpio lab-gpio-test
 펌웨어로 합쳐진 Overlay는 런타임 `dtoverlay -r`로 제거할 수 없으므로 설정 복구와 재부팅이 필요하다.
 공식 근거: [Raspberry Pi Device Tree configuration](https://www.raspberrypi.com/documentation/computers/configuration.html).
 
-## 적용 전 백업·복구 절차 (아직 실행 금지)
+## 적용 전 백업·복구 절차
 
 1. 위 조사, 후보 GPIO의 무점유 및 pinmux 확인, 회로·극성 검토, 학습자의 배선 확인을 마친다.
 2. 확인한 부팅 파티션의 config.txt와 모든 include 파일, 기존 대상 dtbo(있다면),
@@ -105,7 +136,7 @@ bitbake lab-gpio lab-gpio-test
 전원을 끄는 시점, 저항·배선·물리 핀의 실제 연결은 학습자 확인 후 결정한다.
 강제 module unload, GPIO 소유자 강제 해제, 무검토 런타임 Overlay 제거는 사용하지 않는다.
 
-## 승인된 장비 구성에서의 실행 예 (현재 BLOCKED)
+## 단일 채널 구성에서의 실행 예
 
 ```sh
 uname -r                       # 빌드 vermagic과 비교
@@ -126,3 +157,5 @@ dmesg | tail -60
 `get`의 LED 값은 마지막 성공한 요청 상태이며 실제 발광 검증을 대신하지 않는다.
 `on` 후 앱을 닫아도 출력은 유지된다. 종료 시 명시적 `off`를 수행한다.
 자세한 unbind/rebind, 실패 주입, 반복 검증은 검증 문서의 절차를 따른다.
+
+</details>
